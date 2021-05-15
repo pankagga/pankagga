@@ -1,0 +1,244 @@
+==========================================
+How Many DATABASE/USER
+==========================================
+
+SEL distinct databasename from dbc.diskspacev order by 1;
+SEL * from USERS;
+
+sel username from dbc.users order by 1;
+
+sel username,'USER  ' from dbc.users 
+union all
+SEL distinct databasename,'DBNAME' from dbc.diskspacev
+order by 1;
+
+sel username from dbc.users 
+union 
+SEL distinct databasename from dbc.diskspacev
+order by 1;
+
+LOCKING ROW FOR ACCESS
+SELECT DatabaseName
+FROM dbc.databasesV
+WHERE databasename = 'PDCRADM' ;
+
+==========================================
+MOVING SPACE FROM ONE DB TO ANOTHER
+==========================================
+
+CREATE DATABASE TDAdmin20131023124357 FROM "DBC" AS perm = 419430400;
+
+GIVE TDAdmin20131023124357 TO "PDCRADM";
+
+DROP DATABASE TDAdmin20131023124357;
+
+==========================
+BTEQ COMMANDS
+==========================
+.show control
+.set width 200
+
+----Setting Session to ANSI/BTET
+.SET SESSION TRANSACTION ANSI; /* Sets ANSI mode*/ 
+.SET SESSION TRANSACTION BTET; /* Sets Teradata mode*/
+Note 1: All text between /* and */ are treated as comments by BTEQ.
+Note 2: The .SET SESSION commands must be entered prior to logging on to the session. 
+You may also activate the ANSI Flagger, which automatically flags non-ANSI compliant syntax with a warning but still returns the expected answer set.
+Example
+.SET SESSION SQLFLAG ENTRY; /* Causes non-Entry level ANSI syntax to be flagged */
+.SET SESSION SQLFLAG NONE /* Disables ANSI Flagger*/ 
+.LOGON etc......... 
+SELECT DATE; /* DATE keyword is not flagged */
+
+
+--BTEQ Script
+A BTEQ script is a file that contains BTEQ commands and SQL statements. 
+A script is built for sequences of commands that are to be executed on more than one occasion, i.e. monthly, weekly, daily. 
+
+How to Submit a BTEQ Script
+Start BTEQ, then enter the following BTEQ command to submit a BTEQ script: 
+.run file = <scriptname>
+
+Both Teradata style (/* */) and ANSI style (--) comments may be included in any SQL command script
+
+create a script with the following lines and save it with name mod2exer.scr
+-------------------------------
+.SET SESSION TRANSACTION ANSI
+.LOGON dbc/dbc,dbc;
+
+SELECT   * FROM     USERS;
+.QUIT
+------------------------------
+
+To Execute The Script:
+.run file=mod2exer.scr
+
+To Execute the BTEQ Script directly from Command Prompt
+bteq < mod2exer.scr
+
+NOTE:- BTEQ only accepts the "batch mode" form of .LOGON while it is reading commands from a file, e.g. when input is redirected on the command line that invokes BTEQ.You can use the .RUN FILE= command to temporarily redirect input, even during an (otherwise) interactive session.
+
+==========================
+ROLES
+==========================
+LOCK ROW FOR     ACCESS
+SELECT   *
+FROM     dbc.RoleInfoV
+WHERE    RoleName='PDCR_Canary';
+
+=====================================================================================
+
+Sample Query to extract data from DBC.RESUSAGESPMA table
+----------------------------------------------------------------------------------
+LOCKING TABLE DBC.RESUSAGESPMA FOR ACCESS
+SELECT CAST("SPMA".THETIME AS TIME), "SPMA".* 
+ FROM DBC.RESUSAGESPMA "SPMA"
+ WHERE THEDATE = CAST('27/05/2011' AS DATE FORMAT 'DD/MM/YYYY')
+ AND THETIME BETWEEN CAST('14:40:00' AS TIME) AND CAST('15:20:00' AS TIME)
+ ORDER BY THEDATE, THETIME, NODEID
+
+Sample Query to extract sum of CPU and sum of I/O consumed, per Session, by a specific DB-User
+-----------------------------------------------------------------------------------------------
+Retrieving the information from DBC.ACCTG tables
+LOCKING TABLE DBC.ACCTG FOR ACCESS
+SELECT 
+USERNAME
+, SUBSTR(ACCOUNTNAME, 9, 9) AS "SESSIONN" --$M6$STAF00001765611052714
+, SUM(CPU)
+, SUM(IO)  
+FROM DBC.ACCTG
+ WHERE USERNAME = 'U_MW185042'
+ GROUP BY 1, 2
+
+Sample Query to extract data from DBC.DBQLOGTBL (primary-base table in DBQL information capture methodology)
+--------------------------------------------------------------------------------------------------------------
+Note:- Check the "ORDER BY" clause, it ensures that the output is in exact same chronological sequence as the
+Execution sequence of SQL-Statements 
+
+LOCKING TABLE DBC.DBQLOGTBL FOR ACCESS
+SELECT *
+ FROM DBC.DBQLOGTBL
+ WHERE USERNAME = 'U_MW185042'
+ AND SESSIONID IN (17654, 17656)
+ORDER BY STARTTIME, SESSIONID, QUERYID, PROCID
+
+Sample Query to extract "LOG ON" and "LOG OFF" clock-time for a specific DB-User
+----------------------------------------------------------------------------------
+LOCKING TABLE DBC.EVENTLOG FOR ACCESS
+select 
+SessionNo, 
+LogonDate, 
+CAST(TIMEFLD AS TIME) as "EVENT_TIME",  -- Clock time indicating the exact time the event occurred 
+CAST(LOGONTIME AS TIME) -- Clock time indicating the exact time when the session logged in 
+ACCOUNTNAME,
+EVENT
+ from DBC.EVENTLOG
+ WHERE USERNAME = 'U_MW185042'
+ AND LOGONDATE = CAST('27/05/2011' AS DATE FORMAT 'DD/MM/YYYY')
+ AND EVENT IN ('Logon', 'Logoff')
+ ORDER BY 2, 3, 
+CASE EVENT
+ WHEN 'Logon' THEN 0
+ WHEN 'Logoff' THEN 1
+ ELSE 2
+END;
+
+Table SKEW
+--------------
+
+Identify Skew for a Column or combination of column values...
+=================================================
+LOCK TABLE GDW_Tables.DW_USER_AUDIT_HIST FOR ACCESS
+SELECT SUM(CAST(TUPLES AS DEC(18,0)))  AS CURRENTPERM,
+       AVG(CAST(TUPLES AS DEC(18,0)))  AS AVERAGE_CURPERM,
+       MAX(CAST(TUPLES AS DEC(18,0)))  AS MAX_CURPERM,
+       (100 - (AVG(CAST(TUPLES AS DEC(18,0))) / MAX(CAST(TUPLES AS DEC(18,0))) * 100)) AS SKEWFACTOR,
+       ((MAX(CAST(TUPLES AS DEC(18,0))) - AVG(CAST(TUPLES AS DEC(18,0)))) * 100)/ (MAX(CAST(TUPLES AS DEC(18,0)))) AS SKEWFACTOR_01 
+ FROM (SELECT HASHAMP(HASHBUCKET 
+                       (HASHROW (<COLUMN NAME #1>, .., .. , <COLUMN NAME #n>)
+                  )
+                 ) AS "AMP" ,
+             COUNT (*) AS "TUPLES"
+        FROM GDW_Tables.DW_USER_AUDIT_HIST
+        GROUP BY 1
+      ) "PROJ";
+
+
+Identify data skew for a table object
+==============================
+SELECT 
+DATABASENAME, 
+TABLENAME, 
+SUM(CAST(CURRENTPERM AS DEC(18,0)))  AS CURRENT_PERM,
+       AVG(CAST(CURRENTPERM AS DEC(18,0)))  AS AVERAGE_CURPERM,
+       MAX(CAST(CURRENTPERM AS DEC(18,0)))  AS MAX_CURPERM,
+       (100 - (AVG(CAST(CURRENTPERM AS DEC(18,0))) / MAX(CAST(CURRENTPERM AS DEC(18,0))) * 100)) AS SKEWFACTOR,
+       ((MAX(CAST(CURRENTPERM AS DEC(18,0))) - AVG(CAST(CURRENTPERM AS DEC(18,0)))) * 100)/ (MAX(CAST(CURRENTPERM AS DEC(18,0)))) AS SKEWFACTOR_01 
+ FROM DBC.TABLESIZE
+ WHERE DATABASENAME = '<DATABASE NAME>'
+ AND TABLENAME = '<TABLE NAME>'
+ GROUP BY DATABASENAME, TABLENAME
+ ORDER BY DATABASENAME, TABLENAME;
+
+SELECT 
+DATABASENAME, 
+TABLENAME, 
+SUM(CAST(CURRENTPERM AS DEC(18,0)))  AS CURRENT_PERM,
+       AVG(CAST(CURRENTPERM AS DEC(18,0)))  AS AVERAGE_CURPERM,
+       MAX(CAST(CURRENTPERM AS DEC(18,0)))  AS MAX_CURPERM,
+       (100 - (AVG(CAST(CURRENTPERM AS DEC(18,0))) / MAX(CAST(CURRENTPERM AS DEC(18,0))) * 100)) AS SKEWFACTOR,
+       ((MAX(CAST(CURRENTPERM AS DEC(18,0))) - AVG(CAST(CURRENTPERM AS DEC(18,0)))) * 100)/ (MAX(CAST(CURRENTPERM AS DEC(18,0)))) AS SKEWFACTOR_01 
+ FROM DBC.TABLESIZE
+ WHERE DATABASENAME = 'D_T000_MS185111'
+ AND TABLENAME = 'CALLREGISTER'
+ GROUP BY DATABASENAME, TABLENAME
+ ORDER BY DATABASENAME, TABLENAME;
+
+
+===================================================================================
+
+Following is the Teradata recommended Best-Practice for Account Strings.
+===============================================================
+Sample: account = $M1$DWBR&S&D&H
+
+Where…….
+------------------
+Performance Group: 	$M1$    	substr(accountstring,2,2) = prfgrp
+Workgroup Group:    	DWBR  	substr(accountstring,5,4) = wrkgrp
+Account String Expansion (ASE) Variables:  	&S&D&H  Where:
+ 		Session:  &S
+ 	 	Date:       &D
+ 	 	Hour:       &H
+===============================================================
+This recommended Best-Practice is found to be better for reporting (One captures Hourly details
+ cause the string is:- &S &D &H).
+ In addition, another very very important reason for this recommendation is that PMCP / PDCR is 
+ entirely based on this account-string. 
+
+======================================================================================
+
+About Object Access Count
+-----------------------------
+
+In Teradata Database, FIND OUT OCCUPIED PERM SPACE WHICH IS UN-HANDLED FOR MORE THAN n NUMBER
+ OF DAYS(or for a certain Time Duration) AND WHICH IS MORE THAN A PREDEFINED VOLUME.
+  
+ To answer the above question we need to know the LAST USAGE DATE-TIME for a Database or User.
+ This LAST USAGE DATE-TIME is recorded in ONE column of following DBC tables…
+ e.g. 1> "DBASE"."LASTACCESSTIMESTAMP" 
+      2> "TVM"."LASTACCESSTIMESTAMP"
+ The Actual logging of usage time-stamp is carried out ONLY if "ObjectUseCountCollectRate" 
+ GDO-DBSControl-GENERAL-category parameter is enabled with valid numeric value.
+ I checked with the DBC tables and realised that the said parameter IS NOT ENABLED, due to 
+ which ALL of the relevant tables have NULL value in the "LASTACCESSTIMESTAMP" column.
+Until the "ObjectUseCountCollectRate" parameter is enabled with valid numeric value (i.e. time
+ in minutes), the logging of LAST USAGE DATE-TIME in the "LASTACCESSTIMESTAMP" will not start.
+ The recommended value for "ObjectUseCountCollectRate" parameter is 10 minutes. 
+ For our purpose it will be sufficient if we use a value of 180 minutes (3 hours).
+ A Teradata-DBA who has the 'root' privileges on the SMP001-4(172.27.161.2) box or the OS-User
+ who is registered with CNS and has access to SMP001-4 can accomplish the modification to 
+ "ObjectUseCountCollectRate".
+ The parameter value comes in to effect IMMEDIATELY after the parameter is WRITTEN to GDO.
+
+======================================================================================
+
